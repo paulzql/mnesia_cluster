@@ -1,3 +1,9 @@
-# mnesia_loader
+mnesia_loader
+=====
 
-mnesia auto loader
+An OTP application
+
+Build
+-----
+
+    $ rebar3 compile
