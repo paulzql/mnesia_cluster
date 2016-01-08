@@ -1,0 +1,17 @@
+{application, 'mnesia_loader',
+ [{description, "An OTP application"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {'mnesia_loader_app', []}},
+  {applications,
+   [kernel,
+    stdlib,
+	mnesia
+   ]},
+  {env,[]},
+  {modules, [mnesia_loader]},
+
+  {contributors, []},
+  {licenses, []},
+  {links, []}
+ ]}.
