@@ -3,7 +3,7 @@
 %% @end
 %%%-------------------------------------------------------------------
 
--module('mnesia_loader_app').
+-module('mnesia_cluster_app').
 
 -behaviour(application).
 
@@ -16,9 +16,9 @@
 %%====================================================================
 
 start(_StartType, _StartArgs) ->
-    case mnesia_loader:start_mnesia() of
+    case mnesia_cluster:start_mnesia() of
 		ok ->
-			mnesia_loader_sup:start_link();
+			mnesia_cluster_sup:start_link();
 		E ->
 			E
 	end.

@@ -3,7 +3,7 @@
 %% @end
 %%%-------------------------------------------------------------------
 
--module('mnesia_loader_sup').
+-module('mnesia_cluster_sup').
 
 -behaviour(supervisor).
 

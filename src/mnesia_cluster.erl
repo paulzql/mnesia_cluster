@@ -1,10 +1,10 @@
--module(mnesia_loader).
+-module(mnesia_cluster).
 
 -export([start_mnesia/0, stop_mnesia/0, config_nodes/0, mnesia_nodes/0]).
 
 -define(MASTER, mnesia_nodes).
 -define(GROUP, mnesia_group).
--define(APPLICATION, mnesia_loader).
+-define(APPLICATION, mnesia_cluster).
 
 %%%===================================================================
 %%% API
@@ -39,7 +39,7 @@ stop_mnesia() ->
 	ok.
 
 %%--------------------------------------------------------------------
-%% @doc get configed nodes from mnesia_loader env: mnesia_nodes
+%% @doc get configed nodes from mnesia_cluster env: mnesia_nodes
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
@@ -88,7 +88,7 @@ prestart(_Master) ->
 poststart([]) ->
 	case create_tables(table_defines()) of
 		ok ->
-			apply_all_module_attributes_of({mnesia_loader, [create]}),
+			apply_all_module_attributes_of({mnesia_cluster, [create]}),
 			ok;
 		Error ->
 			Error
@@ -101,7 +101,7 @@ poststart(Master) ->
 			mnesia:change_table_copy_type(schema, node(), disc_copies),
 			case merge_tables(table_defines()) of
 				ok ->
-					apply_all_module_attributes_of({mnesia_loader, [merge]}),
+					apply_all_module_attributes_of({mnesia_cluster, [merge]}),
 					ok;
 				Error ->
 					Error
@@ -194,14 +194,13 @@ find_copy_type(Opts) ->
 %%--------------------------------------------------------------------
 %% @doc get all table definition from module attribute
 %% example:  
-%%         -mensia_loader({tablename, [{type, bag}, {attributes, [uid,pass]}, {disc_copies, []}]}). 
+%%         -mensia_table({tablename, [{type, bag}, {attributes, [uid,pass]}, {disc_copies, []}]}). 
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
 table_defines() ->
 	[TB || {Module, Attrs} <- all_module_attributes_of(mnesia_table),
 			   TB <- lists:map(fun(Attr) ->
-io:format("attr:~p~n", [Attr]),
 									   case Attr of
 										   {Name, Opts} -> {Name, Opts};
 										   F when is_atom(F) ->

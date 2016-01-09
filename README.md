@@ -1,4 +1,4 @@
-mnesia_loader
+mnesia_cluster
 =====
 
 An OTP application
