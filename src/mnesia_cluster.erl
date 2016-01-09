@@ -4,7 +4,7 @@
 -define(GROUP, mnesia_group).
 -define(APPLICATION, mnesia_cluster).
 
--mnesia_table({mnesia_cluster_test, [{type, set}, {disc_copies, []}, {attributes, [name,pass]}]}).
+-export([start/0, stop/0, config_nodes/0, mnesia_nodes/0]).
 
 %%%===================================================================
 %%% API
@@ -15,7 +15,7 @@
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-start_mnesia() ->
+start() ->
 	Nodes = mnesia_nodes(),
 	mnesia:stop(),
 	case prestart(Nodes) of
@@ -31,7 +31,7 @@ start_mnesia() ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-stop_mnesia() ->
+stop() ->
 	Nodes = mnesia_nodes(),
 	prestop(Nodes),
 	mnesia:stop(),
