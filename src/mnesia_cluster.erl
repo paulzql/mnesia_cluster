@@ -1,10 +1,10 @@
 -module(mnesia_cluster).
 
--export([start_mnesia/0, stop_mnesia/0, config_nodes/0, mnesia_nodes/0]).
-
 -define(MASTER, mnesia_nodes).
 -define(GROUP, mnesia_group).
 -define(APPLICATION, mnesia_cluster).
+
+-mnesia_table({mnesia_cluster_test, [{type, set}, {disc_copies, []}, {attributes, [name,pass]}]}).
 
 %%%===================================================================
 %%% API
@@ -202,7 +202,8 @@ table_defines() ->
 	[TB || {Module, Attrs} <- all_module_attributes_of(mnesia_table),
 			   TB <- lists:map(fun(Attr) ->
 									   case Attr of
-										   {Name, Opts} -> {Name, Opts};
+										   {Name, Opts} -> 
+											   {Name, add_table_option(Opts)};
 										   F when is_atom(F) ->
 											   case apply(Module, F, []) of
 												   {Name, Opts} ->
@@ -215,7 +216,15 @@ table_defines() ->
 									   end
 							   end, Attrs)].
 
-
+add_table_option(Options) ->
+	lists:map(fun({N, O}) ->
+					  case lists:member(N, [disc_copies, disc_only_copies, ram_copies]) of
+						  true ->
+							  {N, [node()|O]};
+						  false ->
+							  {N, O}
+					  end
+			  end, Options).
 
 apply_all_module_attributes_of({Name, Args}) ->
 	[Result || {Module, Attrs} <- all_module_attributes_of(Name),
