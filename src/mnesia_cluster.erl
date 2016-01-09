@@ -1,3 +1,11 @@
+%%%-------------------------------------------------------------------
+%%% @author paul <qianlong.zhou@gmail.com>
+%%% @copyright (C) 2016, paul
+%%% @doc
+%%%
+%%% @end
+%%% Created : 8 Jan 2016 by paul <qianlong.zhou@gmail.com>
+%%%-------------------------------------------------------------------
 -module(mnesia_cluster).
 
 -define(MASTER, mnesia_nodes).
