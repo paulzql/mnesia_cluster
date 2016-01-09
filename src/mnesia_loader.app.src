@@ -5,8 +5,7 @@
   {mod, {'mnesia_loader_app', []}},
   {applications,
    [kernel,
-    stdlib,
-	mnesia
+    stdlib
    ]},
   {env,[]},
   {modules, [mnesia_loader]},

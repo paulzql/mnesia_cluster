@@ -16,7 +16,12 @@
 %%====================================================================
 
 start(_StartType, _StartArgs) ->
-    'mnesia_loader_sup':start_link().
+    case mnesia_loader:start_mnesia() of
+		ok ->
+			mnesia_loader_sup:start_link();
+		E ->
+			E
+	end.
 
 %%--------------------------------------------------------------------
 stop(_State) ->
