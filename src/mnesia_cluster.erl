@@ -24,14 +24,24 @@
 %% @end
 %%--------------------------------------------------------------------
 start() ->
-	Nodes = mnesia_nodes(),
-	mnesia:stop(),
-	case prestart(Nodes) of
-		ok ->
-			mnesia:start(),
-			poststart(Nodes);
-		Error ->
-			Error
+	case application:get_application() of
+		{ok, ?APPLICATION} ->
+			Nodes = mnesia_nodes(),
+			mnesia:stop(),
+			case prestart(Nodes) of
+				ok ->
+					mnesia:start(),
+					poststart(Nodes);
+				E -> E
+			end;
+		_ ->
+			case application:start(?APPLICATION) of
+				ok ->
+					ok;
+				{error,{already_started, ?APPLICATION}} ->
+					ok;
+				E -> E
+			end
 	end.
 
 %%--------------------------------------------------------------------
@@ -44,6 +54,7 @@ stop() ->
 	prestop(Nodes),
 	mnesia:stop(),
 	poststop(Nodes),
+	application:stop(?APPLICATION),
 	ok.
 
 %%--------------------------------------------------------------------
@@ -207,23 +218,31 @@ find_copy_type(Opts) ->
 %% @end
 %%--------------------------------------------------------------------
 table_defines() ->
-	[TB || {Module, Attrs} <- all_module_attributes_of(mnesia_table),
+	L = [TB || {Module, Attrs} <- all_module_attributes_of(mnesia_table),
 			   TB <- lists:map(fun(Attr) ->
 									   case Attr of
-										   {Name, Opts} -> 
+										   {Name, Opts} when is_atom(Name);
+															 is_list(Opts)-> 
 											   {Name, add_table_option(Opts)};
 										   F when is_atom(F) ->
-											   case apply(Module, F, []) of
-												   {Name, Opts} ->
-													   {Name, Opts};
-												   R ->
-													   throw({error_table, {Module, F, R}})
-											   end;
+											   check_defines(apply(Module, F, []));
 										   X ->
 											   throw({error_table, {Module, X}})
 									   end
-							   end, Attrs)].
+							   end, Attrs)],
+	lists:flatten(L).
 
+check_defines(Attrs) when is_list(Attrs) ->
+	L = [{Name, Opts} || {Name, Opts} <- Attrs, not is_atom(Name), not is_list(Opts)],
+	case L of
+		[] ->
+			Attrs;
+		BL ->
+			throw({invalid_table, BL})
+	end;
+check_defines(Attrs) ->
+	check_defines([Attrs]).
+			
 add_table_option(Options) ->
 	lists:map(fun({N, O}) ->
 					  case lists:member(N, [disc_copies, disc_only_copies, ram_copies]) of
