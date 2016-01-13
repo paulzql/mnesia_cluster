@@ -17,11 +17,11 @@
 
 start(_StartType, _StartArgs) ->
     case mnesia_cluster:start() of
-		ok ->
-			mnesia_cluster_sup:start_link();
-		E ->
-			E
-	end.
+        ok ->
+            mnesia_cluster_sup:start_link();
+        E ->
+            E
+    end.
 
 %%--------------------------------------------------------------------
 stop(_State) ->
