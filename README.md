@@ -31,19 +31,20 @@ Config Cluster
 ----
 mnesia_cluster will load configed nodes and dynamic find node with same group,
 **config node**
+
+set env before start
 ```erlang
-%% set env before start
 %% set other nodes (will find and connect other nodes)
 application:set_env(mnesia_cluster, mnesia_nodes, ['node1','node2'...]).
 %% set cluster group (before start mnesia_cluster will try to find same group cluster in nodes())
 %% the same group means the node mnesia_cluster started and mnesia_group value is same.
 application:set_env(mnesia_cluster, mnesia_group, group1).
-%%
-%% --------------------------
-%% you can also config in node config file
+```
+you can also config in .config file
+```erlang
 [
   {mnesia_cluster,	[
-		{mnesia_nodes, ['other@localhost']},
+		{mnesia_nodes, ['other@localhost','other2@localhost']},
 		{mnesia_group, group1}
 	]}
 ].
@@ -111,3 +112,54 @@ myapp.app
 ```
 
 -------------------
+
+table op event
+=======
+
+mnesia_cluster use module attribute 'mnesia_cluster' define event handler
+
+define handler:
+```erlang
+@spec -mnesia_cluster({
+	DefineMethod ::atom(),
+	DefineArgs ::list()
+	}).
+-mnesia_cluster({method, []}).
+```
+handler example:
+```erlang
+method(create) -> ok;
+method(merge) -> ok;
+method(destroy) -> ok;
+method(_) -> ok.
+```
+-------
+or you can add args
+```erlang
+-mnesia_cluster({method, [test]}).
+method(create, Args) -> ok;
+method(destroy, Args=test) ->ok;
+method(destroy, Args=load) ->error;
+```
+
+--------------------
+events
+----
+if defined event handler
+```erlang
+-module(test).
+-mnesia_cluster({mnesia_handler, []}).
+```
+
+**create**
+
+will call test:mnesia_handler(create) after 'mnesia:start' if this node is first startup node in cluster
+
+**merge**
+
+will call test:mnesia_handler(merge) after 'mnesia:start' if this node is not the first startup node in cluster
+
+**destroy**
+
+will call test:mnesia_handler(destroy) before 'mnesia:stop'
+
