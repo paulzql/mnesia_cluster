@@ -18,6 +18,7 @@
 %%% API
 %%%===================================================================
 
+
 %%--------------------------------------------------------------------
 %% @doc start mnesia clustering, return ok if success otherwise return Error
 %% @spec
@@ -64,7 +65,7 @@ stop() ->
 %%--------------------------------------------------------------------
 config_nodes() ->
     case application:get_env(?APPLICATION, ?MASTER) of
-        Nodes when is_list(Nodes) ->
+        {ok, Nodes} when is_list(Nodes) ->
             [N || N <- Nodes, N =/= node(), pong =:= net_adm:ping(N)];
         _ ->
             []
@@ -114,7 +115,7 @@ poststart([]) ->
     end;
 poststart(Master) ->
     case lists:any(fun(N)->
-                           {ok, node()} =:= rpc:call(N, mnesia, change_config, [extra_db_nodes, [node()]])
+                           {ok, [node()]} =:= rpc:call(N, mnesia, change_config, [extra_db_nodes, [node()]])
                    end, Master) of
         true ->
             mnesia:change_table_copy_type(schema, node(), disc_copies),
@@ -180,6 +181,8 @@ merge_tables([{Name, Opts} | Others]) ->
     case find_copy_type(Opts) of
         undefined ->
             ok;
+        disc_only_copies ->
+            mnesia:add_table_copy(Name, node(), disc_copies);
         Type ->
             mnesia:add_table_copy(Name, node(), Type)
     end,
