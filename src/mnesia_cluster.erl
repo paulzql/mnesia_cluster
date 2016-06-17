@@ -12,29 +12,25 @@
 -define(GROUP, mnesia_group).
 -define(APPLICATION, mnesia_cluster).
 
--export([start/0, stop/0, config_nodes/0, mnesia_nodes/0]).
+-export([start/0, stop/0, nodes/0, running_nodes/0, join/1, leave/0, update/1]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-
 %%--------------------------------------------------------------------
 %% @doc start mnesia clustering, return ok if success otherwise return Error
-%% @spec
+%% @spec 
 %% @end
 %%--------------------------------------------------------------------
 start() ->
     case application:get_application() of
         {ok, ?APPLICATION} ->
-            Nodes = mnesia_nodes(),
-            mnesia:stop(),
-            case prestart(Nodes) of
-                ok ->
-                    mnesia:start(),
-                    poststart(Nodes);
-                E -> E
-            end;
+            ensure_dir(),
+            Nodes = config_nodes(),
+            ensure_ok(init_schema(Nodes)),
+            ensure_ok(mnesia:start()),
+            poststart();
         _ ->
             case application:start(?APPLICATION) of
                 ok ->
@@ -51,12 +47,95 @@ start() ->
 %% @end
 %%--------------------------------------------------------------------
 stop() ->
-    Nodes = mnesia_nodes(),
+    Nodes = config_nodes(),
     prestop(Nodes),
+    case application:get_application() of
+        {ok, ?APPLICATION} ->
+            spawn(fun() ->
+                          mnesia:stop(),
+                          poststop(Nodes)
+                  end),
+            ok;
+        _ ->
+            mnesia:stop(),
+            poststop(Nodes),
+            application:stop(?APPLICATION),
+            ok
+    end.
+
+%% @doc Join the mnesia cluster
+join(Node) when Node =:= node() ->
+    {error, cannot_join_to_self};
+join(Node) ->
+    Nodes = mnesia:system_info(db_nodes),
+    RunningNodes = mnesia:system_info(running_db_nodes),
+    case {lists:member(Node, Nodes),lists:member(Node, RunningNodes)} of
+        {true, false} ->
+            {error, joined_not_running};
+        {_,true} ->
+            ok;
+        _ ->
+            try
+                ensure_ok(init_schema([Node]))
+            catch
+                _Error ->
+                    delete_schema(),
+                    ensure_ok(init_schema([Node])),
+                    ensure_ok(mnesia:start()),
+                    poststart()
+            end
+    end.
+                        
+
+%% leave cluster
+leave() ->
+    %% find at least one running cluster node and instruct it to
+    %% remove our schema copy which will in turn result in our node
+    %% being removed as a cluster node from the schema, with that
+    %% change being propagated to all nodes
     mnesia:stop(),
-    poststop(Nodes),
-    application:stop(?APPLICATION),
-    ok.
+    Nodes = mnesia:system_info(db_nodes),
+    RunningNodes = mnesia:system_info(running_db_nodes),
+    
+    case lists:any(
+           fun (Node) ->
+                   case rpc:call(Node, mnesia, del_table_copy,
+                                 [schema, node()]) of
+                       {atomic, ok} -> true;
+                       {badrpc, nodedown} -> false;
+                       {aborted, Reason} ->
+                           throw({error, {failed_to_leave_cluster,
+                                          Nodes, RunningNodes, Reason}})
+                   end
+           end,
+           RunningNodes--[node()]) of
+        true -> 
+            delete_schema(),
+            ok;
+        false -> throw({error, {no_running_cluster_nodes,
+                                Nodes, RunningNodes}})
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc get cluster nodes
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+nodes() ->
+    mnesia:system_info(db_nodes).
+
+%% get running nodes
+running_nodes() ->
+    mnesia:system_info(running_db_nodes).
+
+%% add table define modules
+%% note: need start cluster
+update(Modules) ->
+    poststart(Modules).
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
 
 %%--------------------------------------------------------------------
 %% @doc get configed nodes from mnesia_cluster env: mnesia_nodes
@@ -66,69 +145,89 @@ stop() ->
 config_nodes() ->
     case application:get_env(?APPLICATION, ?MASTER) of
         {ok, Nodes} when is_list(Nodes) ->
-            [N || N <- Nodes, N =/= node(), pong =:= net_adm:ping(N)];
+            [N || N <- Nodes, N =/= node()];
         _ ->
             []
     end.
 
-%%--------------------------------------------------------------------
-%% @doc get cluster nodes
-%%      configed nodes from mnesia_nodes env and other nodes with same group
-%%      group defined in mnesia_group env (default is undefined)
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-mnesia_nodes() ->
-    Nodes1 = config_nodes(),
-    Group = application:get_env(?APPLICATION, ?GROUP),
-    Nodes2 = [N || N <- nodes(), ok =:= rpc:call(N, application, ensure_started, [?APPLICATION]),
-             Group =:= rpc:call(N, application, get_env, [?APPLICATION, ?GROUP])],
-    lists:umerge(lists:sort(Nodes1), lists:sort(Nodes2)).
+%% @doc Init mnesia schema or tables.
+init_schema(Nodes) ->
+    ensure_ok(mnesia:start()),
+    case mnesia:change_config(extra_db_nodes, Nodes -- [node()]) of
+        {ok, []} ->
+            case running_nodes() -- [node()] of
+                [] ->
+                    mnesia:stop(),
+                    mnesia:create_schema([node()]),
+                    ok;
+                _ ->
+                    ok
+            end;
+        {ok, _} ->
+            copy_schema(node());
+        {error,Error} ->
+            Error
+    end.
 
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @doc before mnesia start (create schema)
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-prestart([]) ->
-    mnesia:create_schema([node()]),
-    ok;
-prestart(_Master) ->
-    ok.
+%% @doc Copy schema.
+copy_schema(Node) ->
+    case mnesia:change_table_copy_type(schema, Node, disc_copies) of
+        {atomic, ok} ->
+            ok;
+        {aborted, {already_exists, schema, Node, disc_copies}} ->
+            ok;
+        {aborted, Error} ->
+            {error, Error}
+    end.
 
-%%--------------------------------------------------------------------
-%% @doc  after mensia start (create tables or copy tables)
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-poststart([]) ->
-    case create_tables(table_defines()) of
+%% @doc Force to delete schema.
+delete_schema() ->
+    mnesia:stop(),
+    mnesia:delete_schema([node()]).
+
+%% ensure mneisa dir is ok
+ensure_dir() ->
+    Dir = mnesia:system_info(directory) ++ "/",
+    case filelib:ensure_dir(Dir) of
+        ok ->
+            ok;
+        {error, Reason} ->
+            throw({error, {cannot_create_mnesia_dir, Dir, Reason}})
+    end.
+
+
+%% init tables
+init_tables(master, Modules) ->
+    case create_tables(table_defines(Modules)) of
         ok ->
             apply_all_module_attributes_of({mnesia_cluster, [create]}),
             ok;
         Error ->
-            Error
-    end;
-poststart(Master) ->
-    case lists:any(fun(N)->
-                           {ok, [node()]} =:= rpc:call(N, mnesia, change_config, [extra_db_nodes, [node()]])
-                   end, Master) of
-        true ->
-            mnesia:change_table_copy_type(schema, node(), disc_copies),
-            case merge_tables(table_defines()) of
-                ok ->
-                    apply_all_module_attributes_of({mnesia_cluster, [merge]}),
-                    ok;
-                Error ->
-                    Error
-            end;
-        _ ->
-            {error, extra_db_nodes}
+            throw(Error)
+    end;  
+init_tables(slave, Modules) ->
+    case merge_tables(table_defines(Modules)) of
+        ok ->
+            apply_all_module_attributes_of({mnesia_cluster, [merge]}),
+            ok;
+        Error ->
+            throw(Error)
     end.
+
+%% post start after mnesia running
+poststart() ->
+    poststart(all).
+poststart(Modules) ->
+    case running_nodes() -- [node()] of
+        [] ->
+            init_tables(master, Modules);
+        [_|_] ->
+            init_tables(slave, Modules)
+    end,
+    %% wait for tables
+    wait_tables().
+
 
 %%--------------------------------------------------------------------
 %% @doc  before stop
@@ -143,15 +242,8 @@ prestop(_) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-poststop(Nodes) ->
-    % clear replica before leaving the cluster
-    lists:foreach(fun(N) ->
-                      case node() of
-                          N -> ok;
-                          _ -> rpc:call(N, mnesia, del_table_copy, [schema, node()])
-                      end
-                  end,
-                  Nodes).
+poststop(_) ->
+    ok.
 
 %%--------------------------------------------------------------------
 %% @doc create tables from the table definition
@@ -181,10 +273,13 @@ merge_tables([{Name, Opts} | Others]) ->
     case find_copy_type(Opts) of
         undefined ->
             ok;
-        disc_only_copies ->
-            mnesia:add_table_copy(Name, node(), disc_copies);
         Type ->
-            mnesia:add_table_copy(Name, node(), Type)
+            case mnesia:add_table_copy(Name, node(), Type) of
+                {aborted, {no_exists, {Name, cstruct}}} ->
+                    create_tables([{Name, Opts}]);
+                _ ->
+                    ok
+            end
     end,
     merge_tables(Others).
 
@@ -209,7 +304,7 @@ find_copy_type(Opts) ->
     case Types of
         [] ->
             undefined;
-        [T|_] ->
+        [{T,_}|_] ->
             T
     end.
 
@@ -220,8 +315,11 @@ find_copy_type(Opts) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-table_defines() ->
-    L = [TB || {Module, Attrs} <- all_module_attributes_of(mnesia_table),
+table_defines(all) ->
+    table_defines(all_modules());
+
+table_defines(Modules) when is_list(Modules) ->
+    L = [TB || {Module, Attrs} <- all_module_attributes_of(mnesia_table, Modules),
                TB <- lists:map(fun(Attr) ->
                                        case Attr of
                                            {Name, Opts} when is_atom(Name);
@@ -257,7 +355,7 @@ add_table_option(Options) ->
               end, Options).
 
 apply_all_module_attributes_of({Name, Args}) ->
-    [Result || {Module, Attrs} <- all_module_attributes_of(Name),
+    [Result || {Module, Attrs} <- all_module_attributes_of(Name, all_modules()),
                Result <- lists:map(fun(Attr) ->
                                             case Attr of
                                                 {M, F, A} -> {{M, F, A}, apply(M, F, Args++A)};
@@ -268,9 +366,7 @@ apply_all_module_attributes_of({Name, Args}) ->
 apply_all_module_attributes_of(Name) ->
     apply_all_module_attributes_of({Name, []}).
 
-all_module_attributes_of(Name) ->
-    Modules = lists:append([M || {App, _, _} <- application:loaded_applications(),
-                                 {ok, M} <- [application:get_key(App, modules)]]),
+all_module_attributes_of(Name, Modules) ->
     lists:foldl(fun(Module, Acc) ->
                         case lists:append([Attr || {N, Attr} <- module_attributes_in(Module),
                                                    N =:= Name]) of
@@ -279,9 +375,29 @@ all_module_attributes_of(Name) ->
                         end
                 end, [], Modules).
 
+all_modules() ->
+    lists:append([M || {App, _, _} <- application:loaded_applications(),
+                       {ok, M} <- [application:get_key(App, modules)]]).
+
 module_attributes_in(Module) ->
     case catch Module:module_info(attributes) of
         {'EXIT', {undef, _}} -> [];
         {'EXIT', Reason} -> exit(Reason);
         Attributes -> Attributes
+    end.
+
+%% ensure ok
+ensure_ok(ok) -> ok;
+ensure_ok({error, {_Node, {already_exists, _Node}}}) -> ok;
+ensure_ok({badrpc, Reason}) -> throw({error, {badrpc, Reason}});
+ensure_ok({error, Reason}) -> throw({error, Reason});
+ensure_ok(Error) -> throw(Error).
+
+%% wait tables
+wait_tables() ->
+    Tables = mnesia:system_info(local_tables),
+    case mnesia:wait_for_tables(Tables, 600000) of
+        ok                   -> ok;
+        {error, Reason}      -> {error, Reason};
+        {timeout, BadTables} -> {error, {timetout, BadTables}}
     end.

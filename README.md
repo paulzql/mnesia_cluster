@@ -4,8 +4,8 @@ mnesia_cluster
 mnesia_cluster is a simple application easy cluster mnesia and auto create mnesia table. 
 
 1. auto create mnesia table
-2. auto split mnesia table
-3. group mnesia cluster
+2. auto merge mnesia table
+3. mnesia cluster
 
 Build
 -----
@@ -22,33 +22,47 @@ make sure start mnesia_cluster before use mnesia, recommend start it after node 
     mnesia_cluster:start().
     
     
-**2. stop (leave cluster)**
+**2. stop**
 
     mnesia_cluster:stop()
 
 --------------------
 Config Cluster
 ----
-mnesia_cluster will load configed nodes and dynamic find node with same group,
+mnesia_cluster will load configed nodes and dynamic join cluster,
 **config node**
 
 set env before start
 ```erlang
 %% set other nodes (will find and connect other nodes)
 application:set_env(mnesia_cluster, mnesia_nodes, ['node1','node2'...]).
-%% set cluster group (before start mnesia_cluster will try to find same group cluster in nodes())
-%% the same group means the node mnesia_cluster started and mnesia_group value is same.
-application:set_env(mnesia_cluster, mnesia_group, group1).
+
 ```
 you can also config in .config file
 ```erlang
 [
   {mnesia_cluster,	[
-		{mnesia_nodes, ['other@localhost','other2@localhost']},
-		{mnesia_group, group1}
+		{mnesia_nodes, ['other@localhost','other2@localhost']}
 	]}
 ].
 ```
+
+--------------------
+Join Cluster
+----
+```erlang
+    %% try to join 'test1@xx.com' cluster
+    %% note: this will clean current node's data and copy data from 'test1@xx.com'
+    mnesia_cluster:join('test1@xx.com')
+```
+--------------------
+Leave cluster
+----
+```erlang
+    %% if leave successful, will delete current node's data
+    mnesia_cluster:leave()
+```
+
 
 --------------------
 Define table
@@ -95,6 +109,15 @@ get_table() ->
    {users, [{type, set}, {disc_only_copies, [node()]}, {attributes, recordinfo(user)}]}
  ].
 ```
+
+----------------
+Dynamic add defined table
+----
+```erlang
+    %% make sure module [test1,test2] has table define
+    mnesia_cluster:update([test1,test2]).
+```
+
 --------------------
 add module to application
 ----
@@ -110,56 +133,4 @@ myapp.app
  ]}.
 
 ```
-
--------------------
-
-table op event
-=======
-
-mnesia_cluster use module attribute 'mnesia_cluster' define event handler
-
-define handler:
-```erlang
-@spec -mnesia_cluster({
-	DefineMethod ::atom(),
-	DefineArgs ::list()
-	}).
--mnesia_cluster({method, []}).
-```
-handler example:
-```erlang
-method(create) -> ok;
-method(merge) -> ok;
-method(destroy) -> ok;
-method(_) -> ok.
-```
--------
-or you can add args
-```erlang
--mnesia_cluster({method, [test]}).
-method(create, Args) -> ok;
-method(destroy, Args=test) ->ok;
-method(destroy, Args=load) ->error;
-```
-
---------------------
-events
-----
-if defined event handler
-```erlang
--module(test).
--mnesia_cluster({mnesia_handler, []}).
-```
-
-**create**
-
-will call test:mnesia_handler(create) after 'mnesia:start' if this node is first startup node in cluster
-
-**merge**
-
-will call test:mnesia_handler(merge) after 'mnesia:start' if this node is not the first startup node in cluster
-
-**destroy**
-
-will call test:mnesia_handler(destroy) before 'mnesia:stop'
 
