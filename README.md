@@ -5,7 +5,7 @@ mnesia_cluster is a simple application easy cluster mnesia and auto create mnesi
 
 1. auto create mnesia table
 2. auto merge mnesia table
-3. mnesia cluster
+3. cluster mnesia
 
 Build
 -----
@@ -29,8 +29,7 @@ make sure start mnesia_cluster before use mnesia, recommend start it after node 
 --------------------
 Config Cluster
 ----
-mnesia_cluster will load configed nodes and dynamic join cluster,
-**config node**
+mnesia_cluster will load configed nodes and dynamic join cluster
 
 set env before start
 ```erlang
@@ -111,7 +110,7 @@ get_table() ->
 ```
 
 ----------------
-Dynamic add defined table
+Dynamic add defined table from modules
 ----
 ```erlang
     %% make sure module [test1,test2] has table define
