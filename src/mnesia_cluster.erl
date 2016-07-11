@@ -12,7 +12,7 @@
 -define(GROUP, mnesia_group).
 -define(APPLICATION, mnesia_cluster).
 
--export([start/0, stop/0, nodes/0, running_nodes/0, join/1, leave/0, update/1]).
+-export([start/0, stop/0, nodes/0, running_nodes/0, join/1, join/2, leave/0, clean/0, update/1]).
 
 %%%===================================================================
 %%% API
@@ -29,7 +29,6 @@ start() ->
             ensure_dir(),
             Nodes = config_nodes(),
             ensure_ok(init_schema(Nodes)),
-            ensure_ok(mnesia:start()),
             poststart();
         _ ->
             case application:start(?APPLICATION) of
@@ -63,26 +62,40 @@ stop() ->
             ok
     end.
 
+clean() ->
+    delete_schema().
+
 %% @doc Join the mnesia cluster
 join(Node) when Node =:= node() ->
     {error, cannot_join_to_self};
 join(Node) ->
+    join(Node, false).
+
+join(Node, Force) ->
     Nodes = mnesia:system_info(db_nodes),
     RunningNodes = mnesia:system_info(running_db_nodes),
     case {lists:member(Node, Nodes),lists:member(Node, RunningNodes)} of
         {true, false} ->
             {error, joined_not_running};
         {_,true} ->
-            ok;
+            {error, already_joined};
         _ ->
-            try
-                ensure_ok(init_schema([Node]))
-            catch
-                _Error ->
+            mnesia:start(),
+            case {mnesia:change_config(extra_db_nodes, [Node]), Force} of
+                {{ok, []}, false} ->
+                    {error, join_failed};
+                {{ok, [_|_]}, _} ->
+                    case copy_schema(node()) of
+                        ok ->
+                            poststart();
+                        E ->
+                            E
+                    end;
+                {Error, false} ->
+                    Error;
+                {_, true} ->
                     delete_schema(),
-                    ensure_ok(init_schema([Node])),
-                    ensure_ok(mnesia:start()),
-                    poststart()
+                    join(Node, false)
             end
     end.
                         
@@ -112,8 +125,8 @@ leave() ->
         true -> 
             delete_schema(),
             ok;
-        false -> throw({error, {no_running_cluster_nodes,
-                                Nodes, RunningNodes}})
+        false -> {error, {no_running_cluster_nodes,
+                                Nodes, RunningNodes}}
     end.
 
 %%--------------------------------------------------------------------
@@ -152,20 +165,20 @@ config_nodes() ->
 
 %% @doc Init mnesia schema or tables.
 init_schema(Nodes) ->
-    ensure_ok(mnesia:start()),
+    mnesia:start(),
     case mnesia:change_config(extra_db_nodes, Nodes -- [node()]) of
         {ok, []} ->
             case running_nodes() -- [node()] of
                 [] ->
                     mnesia:stop(),
                     mnesia:create_schema([node()]),
-                    ok;
+                    mnesia:start();
                 _ ->
                     ok
             end;
         {ok, _} ->
             copy_schema(node());
-        {error,Error} ->
+        Error ->
             Error
     end.
 
