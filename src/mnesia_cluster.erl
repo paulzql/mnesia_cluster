@@ -93,7 +93,7 @@ join(Node, Force) ->
                     end;
                 {Error, false} ->
                     Error;
-                {_, true} ->
+                {_, _} ->
                     delete_schema(),
                     join(Node, false)
             end
