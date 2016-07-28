@@ -12,7 +12,7 @@
 -define(GROUP, mnesia_group).
 -define(APPLICATION, mnesia_cluster).
 
--export([start/0, stop/0, nodes/0, running_nodes/0, join/1, join/2, leave/0, clean/0, update/1]).
+-export([start/0, stop/0, nodes/0, running_nodes/0, join/1, join/2, leave/0, clean/0, update/1, delete/1]).
 
 %%%===================================================================
 %%% API
@@ -145,6 +145,11 @@ running_nodes() ->
 %% note: need start cluster
 update(Modules) ->
     poststart(Modules).
+
+%% delete tables witch defined in modules
+%% note: need start cluster
+delete(Modules) ->
+    delete_tables(table_defines(Modules)).
 
 %%%===================================================================
 %%% Internal functions
@@ -295,6 +300,17 @@ merge_tables([{Name, Opts} | Others]) ->
             end
     end,
     merge_tables(Others).
+
+%%--------------------------------------------------------------------
+%% @doc delete tables base the table definition
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+delete_tables([]) ->
+    ok;
+delete_tables([{Name, _} | Others]) ->
+    mnesia:del_table_copy(Name, node()),
+    delete_tables(Others).
 
 %%--------------------------------------------------------------------
 %% @doc find the table copy type from the table options
