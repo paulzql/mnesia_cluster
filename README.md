@@ -105,7 +105,7 @@ func() ->
 get_table() ->
  [
    {message, [{type, bag}, {disc_copies, [node()]}, {attributes, recordinfo(message)}]},
-   {users, [{type, set}, {disc_only_copies, [node()]}, {attributes, recordinfo(user)}]}
+   {users, [{type, set}, {disc_only_copies, [node()]}, {attributes, record_info(fields, user)}]}
  ].
 ```
 
