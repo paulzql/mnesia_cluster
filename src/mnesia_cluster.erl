@@ -123,7 +123,7 @@ leave(Node) ->
             rpc:call(Node, mnesia, stop, []),
             RunningNodes = [N1 || N1 <- mnesia:system_info(running_db_nodes), N1 =/= Node],
             lists:any(fun(Other) ->
-                              case rpc:call(Other, mneisa, del_table_copy, [schema, Node]) of
+                              case rpc:call(Other, mnesia, del_table_copy, [schema, Node]) of
                                   {atomic, ok} -> true;
                                   _ -> false
                               end
