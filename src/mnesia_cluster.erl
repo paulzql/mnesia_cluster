@@ -12,7 +12,9 @@
 -define(GROUP, mnesia_group).
 -define(APPLICATION, mnesia_cluster).
 
--export([start/0, stop/0, nodes/0, running_nodes/0, join/1, join/2, leave/0, clean/0, update/1, delete/1]).
+-export([start/0, stop/0, nodes/0, running_nodes/0, 
+         join/1, join/2, leave/0, leave/1,
+         clean/0, update/1, delete/1]).
 
 %%%===================================================================
 %%% API
@@ -99,39 +101,44 @@ join(Node, Force) ->
             end
     end.
                         
-
-%% leave cluster
 leave() ->
+    leave(node()).
+%%--------------------------------------------------------------------
+%% @doc leave node from cluster
+%% @spec leave(atom()) -> ok | {error, Reason}.
+%% @end
+%%--------------------------------------------------------------------
+leave(Node) ->
     %% find at least one running cluster node and instruct it to
     %% remove our schema copy which will in turn result in our node
     %% being removed as a cluster node from the schema, with that
     %% change being propagated to all nodes
-    mnesia:stop(),
     Nodes = mnesia:system_info(db_nodes),
-    RunningNodes = mnesia:system_info(running_db_nodes),
-    
-    case lists:any(
-           fun (Node) ->
-                   case rpc:call(Node, mnesia, del_table_copy,
-                                 [schema, node()]) of
-                       {atomic, ok} -> true;
-                       {badrpc, nodedown} -> false;
-                       {aborted, Reason} ->
-                           throw({error, {failed_to_leave_cluster,
-                                          Nodes, RunningNodes, Reason}})
-                   end
-           end,
-           RunningNodes--[node()]) of
-        true -> 
-            delete_schema(),
+    Ret = 
+    case [N || N <- Nodes, N =:= Node] of
+        [] -> 
+            node_not_in_cluster;
+        _ ->
+            %% try to stop mneisa on that node
+            rpc:call(Node, mnesia, stop, []),
+            RunningNodes = [N1 || N1 <- mnesia:system_info(running_db_nodes), N1 =/= Node],
+            lists:any(fun(Other) ->
+                              case rpc:call(Other, mneisa, del_table_copy, [schema, Node]) of
+                                  {atomic, ok} -> true;
+                                  _ -> false
+                              end
+                      end, RunningNodes)
+    end,
+    case Ret of
+        true ->
+            rpc:call(Node, mnesia, delete_schema, [[Node]]),
             ok;
-        false -> {error, {no_running_cluster_nodes,
-                                Nodes, RunningNodes}}
+        E -> {error, E}
     end.
 
 %%--------------------------------------------------------------------
 %% @doc get cluster nodes
-%% @spec
+%% @spec nodes() -> [atom()].
 %% @end
 %%--------------------------------------------------------------------
 nodes() ->
