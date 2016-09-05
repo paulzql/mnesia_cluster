@@ -6,7 +6,8 @@
   {applications,
    [kernel,
     stdlib,
-    mnesia
+    mnesia,
+    reunion
    ]},
   {env,[]},
   {modules, [mnesia_cluster]},
