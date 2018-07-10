@@ -260,7 +260,7 @@ poststart(Modules) ->
 %% @end
 %%--------------------------------------------------------------------
 prestop(_) ->
-    apply_all_module_attributes_of({mensia_loader, [destroy]}).
+    apply_all_module_attributes_of({mnesia_loader, [destroy]}).
 
 %%--------------------------------------------------------------------
 %% @doc  after stop (leave cluster)
