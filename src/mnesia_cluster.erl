@@ -30,7 +30,7 @@ start() ->
         {ok, ?APPLICATION} ->
             ensure_dir(),
             Nodes = config_nodes(),
-            lists:foreach(fun net_kernel:connect_node/1, [Nodes -- node()]),
+            lists:foreach(fun net_kernel:connect_node/1, [Nodes -- [node()]]),
             ensure_ok(init_schema(Nodes)),
             poststart();
         _ ->
