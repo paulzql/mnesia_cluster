@@ -11,8 +11,9 @@
 -define(MASTER, mnesia_nodes).
 -define(GROUP, mnesia_group).
 -define(APPLICATION, mnesia_cluster).
+-define(WAIT_FOR_TABLES, 300000).
 
--export([start/0, stop/0, nodes/0, running_nodes/0, 
+-export([start/0, stop/0, nodes/0, running_nodes/0,
          join/1, join/2, leave/0, leave/1,
          clean/0, update/1, delete/1]).
 
@@ -22,7 +23,7 @@
 
 %%--------------------------------------------------------------------
 %% @doc start mnesia clustering, return ok if success otherwise return Error
-%% @spec 
+%% @spec
 %% @end
 %%--------------------------------------------------------------------
 start() ->
@@ -101,7 +102,7 @@ join(Node, Force) ->
                     join(Node, false)
             end
     end.
-                        
+
 leave() ->
     leave(node()).
 %%--------------------------------------------------------------------
@@ -115,9 +116,9 @@ leave(Node) ->
     %% being removed as a cluster node from the schema, with that
     %% change being propagated to all nodes
     Nodes = mnesia:system_info(db_nodes),
-    Ret = 
+    Ret =
     case [N || N <- Nodes, N =:= Node] of
-        [] -> 
+        [] ->
             node_not_in_cluster;
         _ ->
             %% try to stop mneisa on that node
@@ -227,14 +228,16 @@ ensure_dir() ->
 init_tables(master, Modules) ->
     case create_tables(table_defines(Modules)) of
         ok ->
+            wait_tables(),
             apply_all_module_attributes_of({mnesia_cluster, [create]}),
             ok;
         Error ->
             throw(Error)
-    end;  
+    end;
 init_tables(slave, Modules) ->
     case merge_tables(table_defines(Modules)) of
         ok ->
+            wait_tables(),
             apply_all_module_attributes_of({mnesia_cluster, [merge]}),
             ok;
         Error ->
@@ -347,8 +350,8 @@ find_copy_type(Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc get all table definition from module attribute
-%% example:  
-%%         -mensia_table({tablename, [{type, bag}, {attributes, [uid,pass]}, {disc_copies, []}]}). 
+%% example:
+%%         -mensia_table({tablename, [{type, bag}, {attributes, [uid,pass]}, {disc_copies, []}]}).
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
@@ -360,7 +363,7 @@ table_defines(Modules) when is_list(Modules) ->
                TB <- lists:map(fun(Attr) ->
                                        case Attr of
                                            {Name, Opts} when is_atom(Name);
-                                                             is_list(Opts)-> 
+                                                             is_list(Opts)->
                                                {Name, add_table_option(Opts)};
                                            F when is_atom(F) ->
                                                check_defines(apply(Module, F, []));
@@ -380,7 +383,7 @@ check_defines(Attrs) when is_list(Attrs) ->
     end;
 check_defines(Attrs) ->
     check_defines([Attrs]).
-            
+
 add_table_option(Options) ->
     lists:map(fun({N, O}) ->
                       case lists:member(N, [disc_copies, disc_only_copies, ram_copies]) of
@@ -433,8 +436,17 @@ ensure_ok(Error) -> throw(Error).
 %% wait tables
 wait_tables() ->
     Tables = mnesia:system_info(local_tables),
-    case mnesia:wait_for_tables(Tables, 600000) of
-        ok                   -> ok;
-        {error, Reason}      -> {error, Reason};
-        {timeout, BadTables} -> {error, {timetout, BadTables}}
+    Timeout = application:get_env(?APPLICATION, wait_for_tables, ?WAIT_FOR_TABLES),
+    logger:info("waiting for mnesia tables"),
+    case mnesia:wait_for_tables(Tables, Timeout) of
+        ok                   ->
+            ok;
+        {error, Reason}      ->
+            {error, Reason};
+        {timeout, BadTables} ->
+            lists:foreach(fun (Tbl) ->
+                                  logger:warning("force load table ~p", [Tbl]),
+                                  yes = mnesia:force_load_table(Tbl)
+                          end, BadTables),
+            ok
     end.
