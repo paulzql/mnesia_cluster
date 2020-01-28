@@ -1,6 +1,6 @@
 {application, 'mnesia_cluster',
  [{description, "An OTP application, load and cluster mnesia"},
-  {vsn, "0.1.0"},
+  {vsn, semver},
   {registered, []},
   {mod, {'mnesia_cluster_app', []}},
   {applications,
