@@ -33,7 +33,9 @@ start() ->
             Nodes = config_nodes(),
             lists:foreach(fun net_kernel:connect_node/1, Nodes -- [node()]),
             ensure_ok(init_schema(Nodes)),
-            poststart();
+            Res = poststart(),
+            application:ensure_all_started(reunion),
+            Res;
         _ ->
             case application:start(?APPLICATION) of
                 ok ->
